@@ -43,6 +43,21 @@ impl<'a, T: ?Sized> ImageLine<'a, T> {
     }
 }
 
+impl<'a> PartialEq for ImageLine<'a, str> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner()
+            .trim_start()
+            .trim_end()
+            .eq(other.inner().trim_start().trim_end())
+    }
+}
+
+impl<'a> PartialEq for ImageLine<'a, [u8]> {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner().eq(other.inner())
+    }
+}
+
 impl<T: ?Sized> Copy for ImageLine<'_, T> {}
 
 impl<T: ?Sized> Clone for ImageLine<'_, T> {
@@ -120,7 +135,10 @@ pub fn apply_bytes(base_image: &[u8], patch: &Patch<'_, [u8]>) -> Result<Vec<u8>
 fn apply_hunk<'a, T: PartialEq + ?Sized>(
     image: &mut Vec<ImageLine<'a, T>>,
     hunk: &Hunk<'a, T>,
-) -> Result<(), ()> {
+) -> Result<(), ()>
+where
+    ImageLine<'a, T>: PartialEq,
+{
     // Find position
     let pos = find_position(image, hunk).ok_or(())?;
 
@@ -139,10 +157,13 @@ fn apply_hunk<'a, T: PartialEq + ?Sized>(
 //
 // It might be worth looking into other possible positions to apply the hunk to as described here:
 // https://neil.fraser.name/writing/patch/
-fn find_position<T: PartialEq + ?Sized>(
-    image: &[ImageLine<T>],
-    hunk: &Hunk<'_, T>,
-) -> Option<usize> {
+fn find_position<'a, T: PartialEq + ?Sized>(
+    image: &[ImageLine<'a, T>],
+    hunk: &Hunk<'a, T>,
+) -> Option<usize>
+where
+    ImageLine<'a, T>: PartialEq,
+{
     // In order to avoid searching through positions which are out of bounds of the image,
     // clamp the starting position based on the length of the image
     let pos = std::cmp::min(hunk.new_range().start().saturating_sub(1), image.len());
@@ -178,11 +199,14 @@ fn pre_image<'a, 'b, T: ?Sized>(lines: &'b [Line<'a, T>]) -> impl Iterator<Item 
     })
 }
 
-fn match_fragment<T: PartialEq + ?Sized>(
-    image: &[ImageLine<T>],
-    lines: &[Line<'_, T>],
+fn match_fragment<'a, T: PartialEq + ?Sized>(
+    image: &[ImageLine<'a, T>],
+    lines: &[Line<'a, T>],
     pos: usize,
-) -> bool {
+) -> bool
+where
+    ImageLine<'a, T>: PartialEq,
+{
     let len = pre_image_line_count(lines);
 
     let image = if let Some(image) = image.get(pos..pos + len) {
@@ -196,7 +220,9 @@ fn match_fragment<T: PartialEq + ?Sized>(
         return false;
     }
 
-    pre_image(lines).eq(image.iter().map(ImageLine::inner))
+    pre_image(lines)
+        .map(ImageLine::Unpatched)
+        .eq(image.iter().cloned())
 }
 
 #[derive(Debug)]
